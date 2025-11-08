@@ -1,0 +1,5 @@
+# Configuration for landmark extraction
+dataset_path: ./dataset
+output_dir: ./landmarks
+detection_confidence: 0.7
+tracking_confidence: 0.5

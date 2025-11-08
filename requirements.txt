@@ -21,8 +21,9 @@ fvcore>=0.1.5
 iopath>=0.1.9
 
 # Video Processing for VideoMAE
-decord>=0.6.0
 av>=10.0.0
+imageio[ffmpeg]>=2.31.0
+imageio-ffmpeg>=0.4.8
 
 # MediaPipe for Landmark Extraction
 mediapipe>=0.10.0
