@@ -5,6 +5,7 @@ from typing import Optional, Callable, Tuple, List, Dict, Any, Union
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 from PIL import Image
 import torchvision.transforms as transforms
 
@@ -28,6 +29,7 @@ class OuhandsDS(Dataset):
         use_bounding_box (bool): If True, load and return bounding box information
         crop_to_bbox (bool): If True, crop images to bounding box region (requires use_bounding_box=True)
         bbox_padding (int): Padding pixels around bounding box when cropping
+        use_segmentation (bool): If True, load and return binary hand segmentation masks
         train_subset_ratio (float): Fraction of training data to use (0.0 to 1.0). Only applies to 'train' split.
                                    Useful for label efficiency experiments. Default is 1.0 (use all data).
         random_seed (int): Random seed for reproducible subset sampling. Default is 42.
@@ -55,6 +57,7 @@ class OuhandsDS(Dataset):
         use_bounding_box: bool = False,
         crop_to_bbox: bool = False,
         bbox_padding: int = 20,
+        use_segmentation: bool = False,
         train_subset_ratio: float = 1.0,
         random_seed: int = 42
     ):
@@ -71,6 +74,7 @@ class OuhandsDS(Dataset):
         self.use_bounding_box = use_bounding_box
         self.crop_to_bbox = crop_to_bbox
         self.bbox_padding = bbox_padding
+        self.use_segmentation = use_segmentation
         self.train_subset_ratio = train_subset_ratio
         self.random_seed = random_seed
 
@@ -306,30 +310,31 @@ class OuhandsDS(Dataset):
             
         return None
     
-    def _crop_image_to_bbox(self, image: Image.Image, bbox: Tuple[int, int, int, int]) -> Image.Image:
-        """
-        Crop image to bounding box with optional padding.
-        
-        Args:
-            image: PIL Image
-            bbox: Tuple of (x, y, width, height)
-            
-        Returns:
-            Cropped PIL Image
-        """
-        x, y, width, height = bbox
-        
-        # Add padding
-        padding = self.bbox_padding
-        x_min = max(0, x - padding)
-        y_min = max(0, y - padding)
-        x_max = min(image.width, x + width + padding)
-        y_max = min(image.height, y + height + padding)
-        
-        # Crop the image
-        cropped_image = image.crop((x_min, y_min, x_max, y_max))
-        return cropped_image
-    
+    def _load_segmentation_mask(self, filename: str) -> Optional[Image.Image]:
+        """Load segmentation mask for a given image filename."""
+        if not self.use_segmentation:
+            return None
+
+        split_mapping = {
+            'train': 'OUHANDS_train/train/hand_data/segmentation',
+            'validation': 'OUHANDS_train/train/hand_data/segmentation',
+            'test': 'OUHANDS_test/test/hand_data/segmentation'
+        }
+
+        mask_dir = self.root_dir / split_mapping.get(self.split, self.split)
+        mask_file = mask_dir / filename
+
+        if not mask_file.exists():
+            print(f"Warning: Segmentation mask not found: {mask_file}")
+            return None
+
+        try:
+            mask = Image.open(mask_file).convert('L')
+            return mask
+        except Exception as exc:
+            print(f"Error reading segmentation mask {mask_file}: {exc}")
+            return None
+
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.samples)
@@ -357,42 +362,65 @@ class OuhandsDS(Dataset):
         except Exception as e:
             raise RuntimeError(f"Error loading image {image_path}: {e}")
         
+        # Load segmentation mask if requested
+        mask = None
+        if self.use_segmentation:
+            mask = self._load_segmentation_mask(filename)
+
         # Load bounding box if requested
         bbox = None
         if self.use_bounding_box:
             bbox_data = self._load_bounding_box(filename)
             if bbox_data is not None:
                 bbox = bbox_data[:4]  # (x, y, width, height)
-                
-                # Crop image to bounding box if requested
+
                 if self.crop_to_bbox:
-                    image = self._crop_image_to_bbox(image, bbox)
-                    # Adjust bbox coordinates after cropping (relative to cropped image)
                     x, y, width, height = bbox
                     padding = self.bbox_padding
                     x_min = max(0, x - padding)
                     y_min = max(0, y - padding)
-                    # New bbox coordinates in cropped image
+                    x_max = min(image.width, x + width + padding)
+                    y_max = min(image.height, y + height + padding)
+                    crop_bounds = (x_min, y_min, x_max, y_max)
+                    image = image.crop(crop_bounds)
+                    if mask is not None:
+                        mask = mask.crop(crop_bounds)
                     bbox = (x - x_min, y - y_min, width, height)
+        elif self.crop_to_bbox:
+            raise ValueError("crop_to_bbox=True requires use_bounding_box=True")
         
         # Apply transforms
         if self.transform is not None:
             image = self.transform(image)
+
+        mask_tensor = None
+        if mask is not None:
+            mask_array = np.array(mask, dtype=np.float32) / 255.0
+            mask_tensor = torch.from_numpy(mask_array).unsqueeze(0).float()  # (1, H, W)
+
+            if isinstance(image, torch.Tensor):
+                target_h, target_w = int(image.shape[-2]), int(image.shape[-1])
+                mask_tensor = mask_tensor.unsqueeze(0)
+                mask_tensor = F.interpolate(mask_tensor, size=(target_h, target_w), mode='nearest')
+                mask_tensor = mask_tensor.squeeze(0)
+            else:
+                mask_tensor = mask_tensor
         
         if self.target_transform is not None:
             label = self.target_transform(label)
         
-        # Return data based on configuration
+        outputs: List[Any] = [image, label]
+
         if self.use_bounding_box:
-            if self.return_paths:
-                return image, label, bbox, str(image_path)
-            else:
-                return image, label, bbox
-        else:
-            if self.return_paths:
-                return image, label, str(image_path)
-            else:
-                return image, label
+            outputs.append(bbox)
+
+        if self.use_segmentation:
+            outputs.append(mask_tensor)
+
+        if self.return_paths:
+            outputs.append(str(image_path))
+
+        return tuple(outputs)
     
     def get_class_name(self, class_idx: int) -> str:
         """Get class name from class index."""
