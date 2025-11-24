@@ -1,0 +1,69 @@
+# Swin Transformer Configuration for OUHANDS Hand Gesture Classification
+# ======================================================================
+
+# Model Configuration
+model:
+  name: "swin_tiny_patch4_window7_224"  # Available: swin_tiny, swin_small, swin_base
+  num_classes: 10                       # OUHANDS has 10 gesture classes (A-K excluding G)
+  pretrained: false                     # Train from scratch
+  drop_rate: 0.1                        # Dropout rate
+  drop_path_rate: 0.1                   # Stochastic depth rate
+
+# Data Configuration
+data:
+  root_dir: "./dataset"                 # Path to OUHANDS dataset
+  image_size: 224                       # Input image size (224x224)
+  batch_size: 32                        # Batch size (adjust based on GPU memory)
+  num_workers: 4                        # Number of data loading workers
+  class_subset: null                    # Use all classes (can specify subset like ['A', 'B', 'C'])
+
+# Optimizer Configuration
+optimizer:
+  name: "AdamW"                         # AdamW optimizer (recommended for Vision Transformers)
+  lr: 0.001                            # Learning rate
+  weight_decay: 0.05                    # Weight decay for regularization
+  betas: [0.9, 0.999]                  # Adam beta parameters
+
+# Learning Rate Scheduler
+scheduler:
+  name: "cosine"                        # Cosine annealing scheduler
+  eta_min: 0.000001                     # Minimum learning rate
+
+# Training Configuration
+training:
+  epochs: 100                           # Number of training epochs
+  label_smoothing: 0.1                  # Label smoothing for better generalization
+  output_dir: "./swin_transformer_results"  # Directory to save results
+
+# Alternative Configurations
+# ===========================
+
+# For faster training (smaller model):
+# model:
+#   name: "swin_tiny_patch4_window7_224"
+#   drop_rate: 0.05
+#   drop_path_rate: 0.05
+# data:
+#   batch_size: 64
+# training:
+#   epochs: 50
+
+# For better accuracy (larger model):
+# model:
+#   name: "swin_small_patch4_window7_224"
+#   drop_rate: 0.15
+#   drop_path_rate: 0.15
+# optimizer:
+#   lr: 0.0005
+#   weight_decay: 0.1
+# training:
+#   epochs: 150
+
+# For limited data (more regularization):
+# model:
+#   drop_rate: 0.2
+#   drop_path_rate: 0.2
+# training:
+#   label_smoothing: 0.2
+# optimizer:
+#   weight_decay: 0.1

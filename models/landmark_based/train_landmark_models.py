@@ -1,13 +1,3 @@
-"""
-Landmark-Based Hand Gesture Recognition Training Script
-
-This script trains and evaluates SVM and Random Forest models on MediaPipe
-hand landmarks extracted from the OUHANDS dataset.
-
-Author: CSC2503 Pro        param_grid = model_config['training']['grid_search']['param_grid']
-        cv_folds = model_config['training']['cv_folds']November 2025
-"""
-
 import os
 import json
 import yaml
@@ -473,7 +463,6 @@ def main():
     # Create trainer and run
     trainer = LandmarkModelTrainer(config_path, landmarks_dir, output_dir)
     trainer.run_training()
-
 
 if __name__ == "__main__":
     main()

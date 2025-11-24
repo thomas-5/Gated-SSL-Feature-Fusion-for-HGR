@@ -1,13 +1,3 @@
-"""
-Model Evaluation Script for Landmark-Based Hand Gesture Recognition
-
-This script evaluates trained landmark-based models on the test set and generates
-comprehensive evaluation reports.
-
-Usage:
-    python evaluate_landmark_models.py --model_dir <path_to_trained_models>
-"""
-
 import os
 import json
 import yaml
