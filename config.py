@@ -30,6 +30,12 @@ class ModelConfig:
     model_name: str = "vit_small_patch16_dinov3"
     num_classes: int = 10
     unfreeze_blocks: int = 3  # Number of final transformer blocks to fine-tune
+    use_swav_fusion: bool = True
+    swav_arch: str = "swav_resnet50"
+    swav_trainable: bool = True
+    attention_threshold: float = 0.6
+    attention_margin: float = 0.15
+    fusion_dim: int | None = None
 
 
 @dataclass

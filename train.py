@@ -17,7 +17,7 @@ from ouhands_loader import OuhandsDS
 from config import ExperimentConfig, get_config
 from model import build_model, parameter_groups
 from evaluate import classification_metrics, evaluate_model
-from utils import forward_with_attention, select_device, set_seed
+from utils import model_forward_with_attention, select_device, set_seed
 
 
 def create_datasets(
@@ -146,8 +146,10 @@ def attention_mask_kl_loss(
 ) -> torch.Tensor:
     """Compute KL divergence between CLS attention maps and segmentation masks."""
 
-    num_patches = model.patch_embed.num_patches
-    grid_h, grid_w = model.patch_embed.grid_size
+    vit_model = getattr(model, "backbone", model)
+
+    num_patches = vit_model.patch_embed.num_patches
+    grid_h, grid_w = vit_model.patch_embed.grid_size
 
     cls_attn = attn_weights[:, :, 0, -num_patches:]
     cls_attn = cls_attn.mean(dim=1)
@@ -216,7 +218,7 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
 
         with autocast_ctx():
-            logits, attn_weights = forward_with_attention(model, images)
+            logits, attn_weights = model_forward_with_attention(model, images)
             loss = criterion(logits, labels)
 
             seg_loss = None

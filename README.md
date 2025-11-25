@@ -10,6 +10,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 ## System Highlights
 
 - DINO ViT fine-tuning with optional segmentation-guided attention KL loss and mixed precision support.
+- Optional SwAV fusion head that crops attention-derived hand regions, extracts SwAV features, and fuses them with DINO CLS tokens through a learned gate.
 - Supervised ImageNet baseline leveraging `vit_base_patch16_224` with selective layer unfreezing.
 - Shared dataloading stack, deterministic seeding, and paired transforms for aligned image–mask augmentations.
 - Automated leakage diagnostics across train, validation, and test splits.
@@ -48,6 +49,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 
 - Pulls configuration from `config.py` (output paths, augmentation choices, optimizer settings).
 - Supports segmentation-weighted KL loss via `config.training.segmentation_kl_weight`.
+- Enable SwAV fusion by setting `config.model.use_swav_fusion = True`; the script will derive hand-centric crops from attention maps and fuse SwAV/DINO embeddings before classification.
 - Saves `*_best.pt` and `*_last.pt` checkpoints under `checkpoints/`.
 
 ### Supervised ViT Baseline

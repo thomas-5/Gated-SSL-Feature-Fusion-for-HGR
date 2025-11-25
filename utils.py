@@ -109,8 +109,13 @@ def _forward_block_with_attention(
     return x, attn_weights
 
 
-def forward_with_attention(model: nn.Module, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Forward pass returning logits and final-block attention weights."""
+def forward_with_attention(
+    model: nn.Module,
+    images: torch.Tensor,
+    *,
+    return_cls: bool = False,
+) -> Tuple[torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Forward pass returning logits, attention weights, and optionally CLS tokens."""
     x = model.patch_embed(images)
     x, rot_pos_embed = model._pos_embed(x)
     x = model.norm_pre(x)
@@ -132,4 +137,19 @@ def forward_with_attention(model: nn.Module, images: torch.Tensor) -> Tuple[torc
 
     x = model.norm(x)
     logits = model.forward_head(x)
+    if return_cls:
+        cls_token = x[:, 0].contiguous()
+        return logits, attn_weights, cls_token
     return logits, attn_weights
+
+
+def model_forward_with_attention(
+    model: nn.Module,
+    images: torch.Tensor,
+    *,
+    return_cls: bool = False,
+) -> Tuple[torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Dispatch attention-aware forward pass supporting wrapped models."""
+    if hasattr(model, "forward_with_attention"):
+        return model.forward_with_attention(images, return_cls=return_cls)
+    return forward_with_attention(model, images, return_cls=return_cls)
