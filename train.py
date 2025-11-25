@@ -1,11 +1,9 @@
 """Training script for DINO fine-tuning on the OUHANDS dataset."""
 from __future__ import annotations
 
-import random
 from contextlib import nullcontext
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,38 +12,25 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from timm.layers import apply_rot_embed_cat
-
 from ouhands_loader import OuhandsDS
 
-from .config import ExperimentConfig, get_config
-from .model import build_model, parameter_groups
-from .evaluate import classification_metrics, evaluate_model
-
-
-def select_device() -> torch.device:
-    """Return the best available device (CUDA > MPS > CPU)."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-def set_seed(seed: int) -> None:
-    """Ensure reproducibility across runs."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+from config import ExperimentConfig, get_config
+from model import build_model, parameter_groups
+from evaluate import classification_metrics, evaluate_model
+from utils import forward_with_attention, select_device, set_seed
 
 
 def create_datasets(
     config: ExperimentConfig,
-    transforms: Dict[str, torch.nn.Module],
+    transforms: Dict[str, object],
 ) -> Tuple[OuhandsDS, OuhandsDS, OuhandsDS]:
     """Instantiate train/validation/test datasets with shared configuration."""
+    train_pair_transform = transforms.get("train_pair")
+    eval_pair_transform = transforms.get("eval_pair")
+
+    train_transform = None if train_pair_transform is not None else transforms.get("train")
+    eval_transform = None if eval_pair_transform is not None else transforms.get("eval")
+
     common_kwargs = {
         "root_dir": config.dataset.root_dir,
         "use_bounding_box": config.dataset.use_bounding_box,
@@ -53,28 +38,35 @@ def create_datasets(
         "use_segmentation": config.dataset.use_segmentation,
     }
 
+    train_kwargs = {
+        **common_kwargs,
+        "transform": train_transform,
+        "paired_transform": train_pair_transform,
+    }
+    eval_kwargs = {
+        **common_kwargs,
+        "transform": eval_transform,
+        "paired_transform": eval_pair_transform,
+    }
+
     train_ds = OuhandsDS(
         split="train",
-        transform=transforms["train"],
+        **train_kwargs,
         train_subset_ratio=config.dataset.train_subset_ratio,
         random_seed=config.dataset.random_seed,
-        **common_kwargs,
     )
 
     val_ds = OuhandsDS(
         split="validation",
-        transform=transforms["eval"],
-        **common_kwargs,
+        **eval_kwargs,
     )
 
     test_ds = OuhandsDS(
         split="test",
-        transform=transforms["eval"],
-        **common_kwargs,
+        **eval_kwargs,
     )
 
     return train_ds, val_ds, test_ds
-
 
 def create_dataloaders(
     config: ExperimentConfig,
@@ -115,7 +107,6 @@ def create_dataloaders(
 
     return train_loader, val_loader, test_loader
 
-
 def _unpack_batch(
     batch: Tuple,
     use_bounding_box: bool,
@@ -146,115 +137,6 @@ def _unpack_batch(
         paths = batch[idx]
 
     return images, labels, bbox, mask, paths
-
-
-def _maybe_add_mask(attn: torch.Tensor, attn_mask: Optional[torch.Tensor]) -> torch.Tensor:
-    """Match timm's mask application semantics for attention tensors."""
-
-    if attn_mask is None:
-        return attn
-
-    if attn_mask.dtype == torch.bool:
-        return attn.masked_fill(~attn_mask, float("-inf"))
-
-    return attn + attn_mask
-
-
-def _attention_forward_with_weights(
-    attn_module: nn.Module,
-    x: torch.Tensor,
-    rope: Optional[torch.Tensor] = None,
-    attn_mask: Optional[torch.Tensor] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Custom attention forward that also returns attention weights."""
-
-    B, N, C = x.shape
-
-    if getattr(attn_module, "qkv", None) is not None:
-        if attn_module.q_bias is None:
-            qkv = attn_module.qkv(x)
-        else:
-            qkv_bias = torch.cat((attn_module.q_bias, attn_module.k_bias, attn_module.v_bias))
-            if attn_module.qkv_bias_separate:
-                qkv = attn_module.qkv(x)
-                qkv = qkv + qkv_bias
-            else:
-                qkv = F.linear(x, weight=attn_module.qkv.weight, bias=qkv_bias)
-
-        qkv = qkv.reshape(B, N, 3, attn_module.num_heads, -1).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)
-    else:
-        q = attn_module.q_proj(x).reshape(B, N, attn_module.num_heads, -1).transpose(1, 2)
-        k = attn_module.k_proj(x).reshape(B, N, attn_module.num_heads, -1).transpose(1, 2)
-        v = attn_module.v_proj(x).reshape(B, N, attn_module.num_heads, -1).transpose(1, 2)
-
-    q, k = attn_module.q_norm(q), attn_module.k_norm(k)
-
-    if rope is not None:
-        num_prefix = attn_module.num_prefix_tokens
-        half = getattr(attn_module, "rotate_half", False)
-        q_suffix = apply_rot_embed_cat(q[:, :, num_prefix:, :], rope, half=half)
-        k_suffix = apply_rot_embed_cat(k[:, :, num_prefix:, :], rope, half=half)
-        q = torch.cat([q[:, :, :num_prefix, :], q_suffix.type_as(v)], dim=2)
-        k = torch.cat([k[:, :, :num_prefix, :], k_suffix.type_as(v)], dim=2)
-
-    q = q * attn_module.scale
-    attn = q @ k.transpose(-2, -1)
-    attn = _maybe_add_mask(attn, attn_mask)
-    attn = attn.softmax(dim=-1)
-    attn_dropped = attn_module.attn_drop(attn)
-
-    x = attn_dropped @ v
-    x = x.transpose(1, 2).reshape(B, N, C)
-    x = attn_module.norm(x)
-    x = attn_module.proj(x)
-    x = attn_module.proj_drop(x)
-    return x, attn
-
-
-def _forward_block_with_attention(
-    block: nn.Module, x: torch.Tensor, rope: Optional[torch.Tensor]
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Forward a transformer block while capturing attention weights."""
-
-    attn_out, attn_weights = _attention_forward_with_weights(block.attn, block.norm1(x), rope=rope)
-
-    if block.gamma_1 is None:
-        x = x + block.drop_path1(attn_out)
-        x = x + block.drop_path2(block.mlp(block.norm2(x)))
-    else:
-        x = x + block.drop_path1(block.gamma_1 * attn_out)
-        x = x + block.drop_path2(block.gamma_2 * block.mlp(block.norm2(x)))
-
-    return x, attn_weights
-
-
-def forward_with_attention(model: nn.Module, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Forward pass returning logits and final-block attention weights."""
-
-    x = model.patch_embed(images)
-    x, rot_pos_embed = model._pos_embed(x)
-    x = model.norm_pre(x)
-
-    attn_weights = None
-
-    for idx, block in enumerate(model.blocks):
-        if rot_pos_embed is None:
-            rope = None
-        elif getattr(model, "rope_mixed", False) and rot_pos_embed is not None:
-            rope = rot_pos_embed[idx]
-        else:
-            rope = rot_pos_embed
-
-        if idx == len(model.blocks) - 1:
-            x, attn_weights = _forward_block_with_attention(block, x, rope)
-        else:
-            x = block(x, rope=rope)
-
-    x = model.norm(x)
-    logits = model.forward_head(x)
-    return logits, attn_weights
-
 
 def attention_mask_kl_loss(
     attn_weights: torch.Tensor,
@@ -291,7 +173,6 @@ def attention_mask_kl_loss(
     kl = kl.sum(dim=1)
     return kl.mean()
 
-
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -314,7 +195,9 @@ def train_one_epoch(
     seg_samples = 0
 
     autocast_ctx = (
-        torch.cuda.amp.autocast if use_amp and device.type == "cuda" else nullcontext
+        (lambda: torch.amp.autocast(device_type="cuda"))
+        if use_amp and device.type == "cuda"
+        else nullcontext
     )
 
     progress = tqdm(loader, desc="Train", leave=False)
@@ -384,12 +267,14 @@ def main(config: ExperimentConfig | None = None) -> None:
     device = select_device()
     print(f"Using device: {device}")
 
+    # Load model and datasets
     model, transforms = build_model(config, device)
     train_ds, val_ds, test_ds = create_datasets(config, transforms)
     train_loader, val_loader, test_loader = create_dataloaders(
         config, train_ds, val_ds, test_ds, device
     )
 
+    # Prepare training components
     criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(
         parameter_groups(model, config.training.weight_decay),
@@ -403,9 +288,10 @@ def main(config: ExperimentConfig | None = None) -> None:
     use_amp = config.training.use_mixed_precision and device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
+    # Training loop
     best_acc = 0.0
     best_state: Dict[str, torch.Tensor] | None = None
-
+    last_state: Dict[str, torch.Tensor] | None = None
     for epoch in range(1, config.training.epochs + 1):
         train_loss, train_acc = train_one_epoch(
             model,
@@ -435,18 +321,21 @@ def main(config: ExperimentConfig | None = None) -> None:
             f"| val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
         )
 
+        last_state = {k: v.cpu() for k, v in model.state_dict().items()}
         if val_acc > best_acc:
             best_acc = val_acc
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
-
-    checkpoint_path = config.checkpoint_path()
+    
+    checkpoint_path = config.checkpoint_path(mode='last')
+    torch.save(last_state, checkpoint_path)
     if best_state is not None:
+        checkpoint_path = config.checkpoint_path(mode='best')
         torch.save(best_state, checkpoint_path)
         print(f"Saved best model (val_acc={best_acc:.4f}) to {checkpoint_path}")
-        model.load_state_dict(best_state)
     else:
         print("Warning: No improvement observed during training: skipping checkpoint save.")
 
+    # Use last model for test evaluation TODO: change to best model if desired
     metrics = classification_metrics(model, test_loader, device, use_amp)
     print(
         "Test metrics | "

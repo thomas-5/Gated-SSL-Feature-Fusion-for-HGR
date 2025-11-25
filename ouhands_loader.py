@@ -52,6 +52,7 @@ class OuhandsDS(Dataset):
         split: str = 'train',
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
+        paired_transform: Optional[Callable[[Image.Image, Optional[Image.Image]], Tuple[Any, Optional[Any]]]] = None,
         return_paths: bool = False,
         class_subset: Optional[List[str]] = None,
         use_bounding_box: bool = False,
@@ -70,6 +71,7 @@ class OuhandsDS(Dataset):
         self.split = split
         self.transform = transform
         self.target_transform = target_transform
+        self.paired_transform = paired_transform
         self.return_paths = return_paths
         self.use_bounding_box = use_bounding_box
         self.crop_to_bbox = crop_to_bbox
@@ -389,27 +391,41 @@ class OuhandsDS(Dataset):
         elif self.crop_to_bbox:
             raise ValueError("crop_to_bbox=True requires use_bounding_box=True")
         
-        # Apply transforms
-        if self.transform is not None:
-            image = self.transform(image)
-
+        image_tensor = image
         mask_tensor = None
-        if mask is not None:
-            mask_array = np.array(mask, dtype=np.float32) / 255.0
-            mask_tensor = torch.from_numpy(mask_array).unsqueeze(0).float()  # (1, H, W)
 
-            if isinstance(image, torch.Tensor):
-                target_h, target_w = int(image.shape[-2]), int(image.shape[-1])
+        if self.paired_transform is not None:
+            image_tensor, mask_tensor = self.paired_transform(image_tensor, mask)
+        else:
+            if self.transform is not None:
+                image_tensor = self.transform(image_tensor)
+
+            if mask is not None:
+                mask_array = np.array(mask, dtype=np.float32) / 255.0
+                mask_tensor = torch.from_numpy(mask_array).unsqueeze(0).float()  # (1, H, W)
+
+                if isinstance(image_tensor, torch.Tensor):
+                    target_h, target_w = int(image_tensor.shape[-2]), int(image_tensor.shape[-1])
+                    mask_tensor = mask_tensor.unsqueeze(0)
+                    mask_tensor = F.interpolate(mask_tensor, size=(target_h, target_w), mode='nearest')
+                    mask_tensor = mask_tensor.squeeze(0)
+                else:
+                    mask_tensor = mask_tensor
+
+        if not isinstance(image_tensor, torch.Tensor):
+            image_tensor = transforms.ToTensor()(image_tensor)
+
+        if mask_tensor is not None:
+            if not isinstance(mask_tensor, torch.Tensor):
+                mask_tensor = torch.as_tensor(mask_tensor, dtype=torch.float32)
+            if mask_tensor.ndim == 2:
                 mask_tensor = mask_tensor.unsqueeze(0)
-                mask_tensor = F.interpolate(mask_tensor, size=(target_h, target_w), mode='nearest')
-                mask_tensor = mask_tensor.squeeze(0)
-            else:
-                mask_tensor = mask_tensor
+            mask_tensor = mask_tensor.float()
         
         if self.target_transform is not None:
             label = self.target_transform(label)
         
-        outputs: List[Any] = [image, label]
+        outputs: List[Any] = [image_tensor, label]
 
         if self.use_bounding_box:
             outputs.append(bbox)

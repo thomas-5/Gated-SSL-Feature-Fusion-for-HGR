@@ -18,7 +18,7 @@ class DatasetConfig:
     num_workers: int = 4
     use_bounding_box: bool = False
     crop_to_bbox: bool = False
-    use_segmentation: bool = False
+    use_segmentation: bool = True
     train_subset_ratio: float = 1.0
     random_seed: int = 42
 
@@ -29,21 +29,21 @@ class ModelConfig:
 
     model_name: str = "vit_small_patch16_dinov3"
     num_classes: int = 10
-    unfreeze_blocks: int = 4  # Number of final transformer blocks to fine-tune
+    unfreeze_blocks: int = 3  # Number of final transformer blocks to fine-tune
 
 
 @dataclass
 class TrainingConfig:
     """Optimizer and training loop settings."""
 
-    epochs: int = 5
+    epochs: int = 20
     learning_rate: float = 5e-4
     weight_decay: float = 0.05
     betas: tuple[float, float] = (0.9, 0.999)
     max_grad_norm: float = 1.0
     use_mixed_precision: bool = True
     scheduler_t_max: int = 5
-    segmentation_kl_weight: float = 0.0
+    segmentation_kl_weight: float = 0.1
 
 
 @dataclass
@@ -56,9 +56,9 @@ class ExperimentConfig:
     output_dir: Path = Path("./checkpoints")
     run_name: str = "vit_small_patch16_dinov3_k4"
 
-    def checkpoint_path(self) -> Path:
+    def checkpoint_path(self, mode='best') -> Path:
         """Return the path for saving/loading experiment checkpoints."""
-        return Path(self.output_dir) / f"{self.run_name}.pt"
+        return Path(self.output_dir) / f"{self.run_name}_{mode}.pt"
 
 
 def get_config() -> ExperimentConfig:

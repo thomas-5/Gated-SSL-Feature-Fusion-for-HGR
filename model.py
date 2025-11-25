@@ -8,10 +8,11 @@ import torch
 import torch.nn as nn
 from timm.data import create_transform, resolve_model_data_config
 
-from .config import ExperimentConfig
+from config import ExperimentConfig
+from paired_transforms import SegmentationEvalTransform, SegmentationTrainTransform
 
 
-def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Module, Dict[str, torch.nn.Module]]:
+def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Module, Dict[str, object]]:
     """Instantiate the timm ViT model and prepare it for fine-tuning.
 
     Args:
@@ -49,6 +50,20 @@ def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Modu
         "train": create_transform(**data_config, is_training=True),
         "eval": create_transform(**data_config, is_training=False),
     }
+
+    transforms["train_pair"] = None
+    transforms["eval_pair"] = None
+
+    if config.dataset.use_segmentation:
+        input_size = data_config.get("input_size")
+        if not input_size:
+            raise ValueError("Model data config missing input_size for segmentation transforms")
+        size = input_size[-1]
+        mean = data_config.get("mean", (0.485, 0.456, 0.406))
+        std = data_config.get("std", (0.229, 0.224, 0.225))
+
+        transforms["train_pair"] = SegmentationTrainTransform(size=size, mean=mean, std=std)
+        transforms["eval_pair"] = SegmentationEvalTransform(size=size, mean=mean, std=std)
 
     return model, transforms
 
