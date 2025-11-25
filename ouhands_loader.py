@@ -388,6 +388,42 @@ class OuhandsDS(Dataset):
                     if mask is not None:
                         mask = mask.crop(crop_bounds)
                     bbox = (x - x_min, y - y_min, width, height)
+                
+                # If we are resizing the image later (via transform), we must also resize the bbox
+                # Check if transform contains Resize
+                # Note: This is a heuristic. Ideally, transforms should handle bbox resizing.
+                # Here we assume standard Resize to (224, 224) is used.
+                if self.transform is not None:
+                    # Get original size before transform
+                    w_orig, h_orig = image.size
+                    
+                    # Apply transform to image
+                    # We need to do this here to know the target size if it's dynamic, 
+                    # but usually it's fixed (224, 224).
+                    # Let's assume target size is 224x224 for now as per default_transforms
+                    target_w, target_h = 224, 224
+                    
+                    # Check if we can extract size from transform
+                    if isinstance(self.transform, transforms.Compose):
+                        for t in self.transform.transforms:
+                            if isinstance(t, transforms.Resize):
+                                if isinstance(t.size, int):
+                                    target_w, target_h = t.size, t.size
+                                elif isinstance(t.size, (tuple, list)):
+                                    target_w, target_h = t.size[1], t.size[0] # PIL size is (W, H), Torch is (H, W) usually but Resize takes (H, W)
+                                break
+                    
+                    # Scale bbox
+                    scale_x = target_w / w_orig
+                    scale_y = target_h / h_orig
+                    
+                    x, y, w, h = bbox
+                    x = int(x * scale_x)
+                    y = int(y * scale_y)
+                    w = int(w * scale_x)
+                    h = int(h * scale_y)
+                    bbox = (x, y, w, h)
+
         elif self.crop_to_bbox:
             raise ValueError("crop_to_bbox=True requires use_bounding_box=True")
         

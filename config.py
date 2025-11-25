@@ -36,7 +36,7 @@ class ModelConfig:
 class TrainingConfig:
     """Optimizer and training loop settings."""
 
-    epochs: int = 20
+    epochs: int = 10
     learning_rate: float = 5e-4
     weight_decay: float = 0.05
     betas: tuple[float, float] = (0.9, 0.999)

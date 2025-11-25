@@ -134,7 +134,8 @@ def _unpack_batch(
 
     paths = None
     if return_paths:
-        paths = batch[idx]
+        # If return_paths is True, it's always the last element
+        paths = batch[-1]
 
     return images, labels, bbox, mask, paths
 
