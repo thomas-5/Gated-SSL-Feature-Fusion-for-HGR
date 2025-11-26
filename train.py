@@ -221,7 +221,6 @@ def train_one_epoch(
     epoch_acc = running_correct / total_samples
     return epoch_loss, epoch_acc
 
-
 def main(config: ExperimentConfig | None = None) -> None:
     """Entry point for training the DINO fine-tuning experiment."""
     config = config or get_config()
