@@ -142,9 +142,7 @@ def save_attention_grid(
         if label_idx in sampled:
             continue
 
-        mask_tensor = None
-        if len(sample) >= 4 and getattr(dataset, "use_segmentation", False):
-            mask_tensor = sample[3]
+        mask_tensor = sample[2] if len(sample) >= 3 else None
 
         sampled[label_idx] = (sample_idx, image_tensor, mask_tensor)
         if len(sampled) == len(target_classes):

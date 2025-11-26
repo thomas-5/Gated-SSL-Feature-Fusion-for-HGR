@@ -28,42 +28,27 @@ def create_datasets(
     train_pair_transform = transforms.get("train_pair")
     eval_pair_transform = transforms.get("eval_pair")
 
-    train_transform = None if train_pair_transform is not None else transforms.get("train")
-    eval_transform = None if eval_pair_transform is not None else transforms.get("eval")
-
-    common_kwargs = {
-        "root_dir": config.dataset.root_dir,
-        "use_bounding_box": config.dataset.use_bounding_box,
-        "crop_to_bbox": config.dataset.crop_to_bbox,
-        "use_segmentation": config.dataset.use_segmentation,
-    }
-
-    train_kwargs = {
-        **common_kwargs,
-        "transform": train_transform,
-        "paired_transform": train_pair_transform,
-    }
-    eval_kwargs = {
-        **common_kwargs,
-        "transform": eval_transform,
-        "paired_transform": eval_pair_transform,
-    }
+    if train_pair_transform is None or eval_pair_transform is None:
+        raise ValueError("Segmentation paired transforms must be provided for all splits")
 
     train_ds = OuhandsDS(
         split="train",
-        **train_kwargs,
+        root_dir=config.dataset.root_dir,
+        paired_transform=train_pair_transform,
         train_subset_ratio=config.dataset.train_subset_ratio,
         random_seed=config.dataset.random_seed,
     )
 
     val_ds = OuhandsDS(
         split="validation",
-        **eval_kwargs,
+        root_dir=config.dataset.root_dir,
+        paired_transform=eval_pair_transform,
     )
 
     test_ds = OuhandsDS(
         split="test",
-        **eval_kwargs,
+        root_dir=config.dataset.root_dir,
+        paired_transform=eval_pair_transform,
     )
 
     return train_ds, val_ds, test_ds
@@ -109,34 +94,16 @@ def create_dataloaders(
 
 def _unpack_batch(
     batch: Tuple,
-    use_bounding_box: bool,
-    use_segmentation: bool,
     return_paths: bool,
 ):
     """Split a variable-length batch tuple into its constituent parts."""
 
-    idx = 0
-    images = batch[idx]
-    idx += 1
+    images = batch[0]
+    labels = batch[1]
+    mask = batch[2] if len(batch) > 2 else None
+    paths = batch[3] if return_paths and len(batch) > 3 else None
 
-    labels = batch[idx]
-    idx += 1
-
-    bbox = None
-    if use_bounding_box:
-        bbox = batch[idx]
-        idx += 1
-
-    mask = None
-    if use_segmentation:
-        mask = batch[idx]
-        idx += 1
-
-    paths = None
-    if return_paths:
-        paths = batch[idx]
-
-    return images, labels, bbox, mask, paths
+    return images, labels, mask, paths
 
 def attention_mask_kl_loss(
     attn_weights: torch.Tensor,
@@ -184,8 +151,6 @@ def train_one_epoch(
     scaler: torch.cuda.amp.GradScaler | None,
     use_amp: bool,
     max_grad_norm: float | None,
-    use_bounding_box: bool,
-    use_segmentation: bool,
     kl_weight: float,
 ) -> Tuple[float, float]:
     """Run a single training epoch."""
@@ -204,10 +169,8 @@ def train_one_epoch(
 
     progress = tqdm(loader, desc="Train", leave=False)
     for batch in progress:
-        images, labels, _, masks, _ = _unpack_batch(
+        images, labels, masks, _ = _unpack_batch(
             batch,
-            use_bounding_box=use_bounding_box,
-            use_segmentation=use_segmentation,
             return_paths=False,
         )
 
@@ -222,7 +185,7 @@ def train_one_epoch(
             loss = criterion(logits, labels)
 
             seg_loss = None
-            if use_segmentation and masks is not None and kl_weight > 0:
+            if masks is not None and kl_weight > 0:
                 seg_loss = attention_mask_kl_loss(attn_weights, masks, model)
                 loss = loss + kl_weight * seg_loss
 
@@ -304,8 +267,6 @@ def main(config: ExperimentConfig | None = None) -> None:
             scaler,
             use_amp,
             config.training.max_grad_norm,
-            config.dataset.use_bounding_box,
-            config.dataset.use_segmentation,
             config.training.segmentation_kl_weight,
         )
         val_loss, val_acc = evaluate_model(

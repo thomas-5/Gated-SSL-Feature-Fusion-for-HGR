@@ -16,9 +16,6 @@ class DatasetConfig:
     root_dir: str = "./dataset"
     batch_size: int = 32
     num_workers: int = 4
-    use_bounding_box: bool = False
-    crop_to_bbox: bool = False
-    use_segmentation: bool = True
     train_subset_ratio: float = 1.0
     random_seed: int = 42
 
@@ -30,7 +27,6 @@ class ModelConfig:
     model_name: str = "vit_small_patch16_dinov3"
     num_classes: int = 10
     unfreeze_blocks: int = 3  # Number of final transformer blocks to fine-tune
-    use_swav_fusion: bool = True
     swav_arch: str = "swav_resnet50"
     swav_trainable: bool = True
     attention_threshold: float = 0.6
@@ -42,7 +38,7 @@ class ModelConfig:
 class TrainingConfig:
     """Optimizer and training loop settings."""
 
-    epochs: int = 20
+    epochs: int = 30
     learning_rate: float = 5e-4
     weight_decay: float = 0.05
     betas: tuple[float, float] = (0.9, 0.999)

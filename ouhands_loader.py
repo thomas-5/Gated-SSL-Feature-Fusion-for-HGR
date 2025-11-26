@@ -26,10 +26,6 @@ class OuhandsDS(Dataset):
         target_transform (callable, optional): Optional transform for labels
         return_paths (bool): If True, return path as additional output
         class_subset (list, optional): Only include specific gesture classes (e.g., ['A', 'B', 'C'])
-        use_bounding_box (bool): If True, load and return bounding box information
-        crop_to_bbox (bool): If True, crop images to bounding box region (requires use_bounding_box=True)
-        bbox_padding (int): Padding pixels around bounding box when cropping
-        use_segmentation (bool): If True, load and return binary hand segmentation masks
         train_subset_ratio (float): Fraction of training data to use (0.0 to 1.0). Only applies to 'train' split.
                                    Useful for label efficiency experiments. Default is 1.0 (use all data).
         random_seed (int): Random seed for reproducible subset sampling. Default is 42.
@@ -39,8 +35,6 @@ class OuhandsDS(Dataset):
         class_to_idx (dict): Mapping from class name to integer index
         samples (list): List of (image_path, class_index) tuples
         split (str): Current dataset split
-        use_bounding_box (bool): Whether bounding box data is loaded
-        crop_to_bbox (bool): Whether images are cropped to bounding box
     """
     
     # OUHANDS gesture classes (10 classes: A-K excluding G)
@@ -55,10 +49,6 @@ class OuhandsDS(Dataset):
         paired_transform: Optional[Callable[[Image.Image, Optional[Image.Image]], Tuple[Any, Optional[Any]]]] = None,
         return_paths: bool = False,
         class_subset: Optional[List[str]] = None,
-        use_bounding_box: bool = False,
-        crop_to_bbox: bool = False,
-        bbox_padding: int = 20,
-        use_segmentation: bool = False,
         train_subset_ratio: float = 1.0,
         random_seed: int = 42
     ):
@@ -73,10 +63,7 @@ class OuhandsDS(Dataset):
         self.target_transform = target_transform
         self.paired_transform = paired_transform
         self.return_paths = return_paths
-        self.use_bounding_box = use_bounding_box
-        self.crop_to_bbox = crop_to_bbox
-        self.bbox_padding = bbox_padding
-        self.use_segmentation = use_segmentation
+        self.use_segmentation = True
         self.train_subset_ratio = train_subset_ratio
         self.random_seed = random_seed
 
@@ -267,51 +254,6 @@ class OuhandsDS(Dataset):
         
         return sampled_samples
     
-    def _load_bounding_box(self, filename: str) -> Optional[Tuple[int, int, int, int, float]]:
-        """
-        Load bounding box for a given image filename.
-        
-        Args:
-            filename: Image filename (e.g., 'A-ima-0001.png')
-            
-        Returns:
-            Tuple of (x, y, width, height, confidence) or None if not found
-        """
-        if not self.use_bounding_box:
-            return None
-            
-        # Map split names to actual directory paths
-        if self.split in ['train', 'validation']:
-            # Both train and validation use OUHANDS_train bounding boxes
-            bbox_dir = self.root_dir / 'OUHANDS_train/train/hand_data/bounding_box'
-        else:  # test split
-            bbox_dir = self.root_dir / 'OUHANDS_test/test/hand_data/bounding_box'
-        
-        bbox_file = bbox_dir / f"{Path(filename).stem}.txt"
-        
-        if not bbox_file.exists():
-            print(f"Warning: Bounding box file not found: {bbox_file}")
-            return None
-        
-        try:
-            with open(bbox_file, 'r') as f:
-                lines = f.read().strip().split('\n')
-                if len(lines) < 2:
-                    return None
-                
-                # Parse bounding box data
-                # Format: x y width height confidence
-                bbox_data = lines[1].split()
-                if len(bbox_data) >= 4:
-                    x, y, width, height = map(int, bbox_data[:4])
-                    confidence = float(bbox_data[4]) if len(bbox_data) > 4 else 1.0
-                    return (x, y, width, height, confidence)
-                
-        except Exception as e:
-            print(f"Error reading bounding box file {bbox_file}: {e}")
-            
-        return None
-    
     def _load_segmentation_mask(self, filename: str) -> Optional[Image.Image]:
         """Load segmentation mask for a given image filename."""
         if not self.use_segmentation:
@@ -349,8 +291,7 @@ class OuhandsDS(Dataset):
             idx (int): Sample index
             
         Returns:
-            If use_bounding_box=False: (image, label) or (image, label, path)
-            If use_bounding_box=True: (image, label, bbox) or (image, label, bbox, path)
+            Tuple containing `(image, label, mask)` and optionally the image path.
         """
         if idx >= len(self.samples):
             raise IndexError(f"Index {idx} out of range for dataset of size {len(self.samples)}")
@@ -370,27 +311,6 @@ class OuhandsDS(Dataset):
             mask = self._load_segmentation_mask(filename)
 
         # Load bounding box if requested
-        bbox = None
-        if self.use_bounding_box:
-            bbox_data = self._load_bounding_box(filename)
-            if bbox_data is not None:
-                bbox = bbox_data[:4]  # (x, y, width, height)
-
-                if self.crop_to_bbox:
-                    x, y, width, height = bbox
-                    padding = self.bbox_padding
-                    x_min = max(0, x - padding)
-                    y_min = max(0, y - padding)
-                    x_max = min(image.width, x + width + padding)
-                    y_max = min(image.height, y + height + padding)
-                    crop_bounds = (x_min, y_min, x_max, y_max)
-                    image = image.crop(crop_bounds)
-                    if mask is not None:
-                        mask = mask.crop(crop_bounds)
-                    bbox = (x - x_min, y - y_min, width, height)
-        elif self.crop_to_bbox:
-            raise ValueError("crop_to_bbox=True requires use_bounding_box=True")
-        
         image_tensor = image
         mask_tensor = None
 
@@ -425,13 +345,7 @@ class OuhandsDS(Dataset):
         if self.target_transform is not None:
             label = self.target_transform(label)
         
-        outputs: List[Any] = [image_tensor, label]
-
-        if self.use_bounding_box:
-            outputs.append(bbox)
-
-        if self.use_segmentation:
-            outputs.append(mask_tensor)
+        outputs: List[Any] = [image_tensor, label, mask_tensor]
 
         if self.return_paths:
             outputs.append(str(image_path))
@@ -464,20 +378,6 @@ class OuhandsDS(Dataset):
             'split': self.split
         }
         
-        # Add bounding box info if available
-        if self.use_bounding_box:
-            bbox_data = self._load_bounding_box(image_path.name)
-            if bbox_data is not None:
-                info['bbox'] = {
-                    'x': bbox_data[0],
-                    'y': bbox_data[1], 
-                    'width': bbox_data[2],
-                    'height': bbox_data[3],
-                    'confidence': bbox_data[4]
-                }
-            else:
-                info['bbox'] = None
-                
         return info
 
     def filter_by_classes(self, classes: List[str]) -> 'OuhandsDS':
@@ -497,9 +397,6 @@ class OuhandsDS(Dataset):
             target_transform=self.target_transform,
             return_paths=self.return_paths,
             class_subset=classes,
-            use_bounding_box=self.use_bounding_box,
-            crop_to_bbox=self.crop_to_bbox,
-            bbox_padding=self.bbox_padding,
             train_subset_ratio=self.train_subset_ratio,
             random_seed=self.random_seed
         )
@@ -579,8 +476,6 @@ class OuhandsDS(Dataset):
             # Use only 10% of training data for label efficiency study
             train_ds, val_ds, test_ds = OuhandsDS.create_label_efficiency_datasets(
                 train_subset_ratio=0.1,
-                crop_to_bbox=True,
-                use_bounding_box=True
             )
         """
         train_ds = cls(

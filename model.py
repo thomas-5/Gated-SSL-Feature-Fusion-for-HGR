@@ -54,30 +54,25 @@ def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Modu
         "eval": create_transform(**data_config, is_training=False),
     }
 
-    transforms["train_pair"] = None
-    transforms["eval_pair"] = None
+    input_size = data_config.get("input_size")
+    if not input_size:
+        raise ValueError("Model data config missing input_size for segmentation transforms")
+    size = input_size[-1]
+    mean = data_config.get("mean", (0.485, 0.456, 0.406))
+    std = data_config.get("std", (0.229, 0.224, 0.225))
 
-    if config.dataset.use_segmentation:
-        input_size = data_config.get("input_size")
-        if not input_size:
-            raise ValueError("Model data config missing input_size for segmentation transforms")
-        size = input_size[-1]
-        mean = data_config.get("mean", (0.485, 0.456, 0.406))
-        std = data_config.get("std", (0.229, 0.224, 0.225))
+    transforms["train_pair"] = SegmentationTrainTransform(size=size, mean=mean, std=std)
+    transforms["eval_pair"] = SegmentationEvalTransform(size=size, mean=mean, std=std)
 
-        transforms["train_pair"] = SegmentationTrainTransform(size=size, mean=mean, std=std)
-        transforms["eval_pair"] = SegmentationEvalTransform(size=size, mean=mean, std=std)
-
-    if config.model.use_swav_fusion:
-        model = DinoSwavFusion(
-            backbone=model,
-            num_classes=config.model.num_classes,
-            swav_arch=config.model.swav_arch,
-            swav_trainable=config.model.swav_trainable,
-            attention_threshold=config.model.attention_threshold,
-            attention_margin=config.model.attention_margin,
-            fusion_dim=config.model.fusion_dim,
-        ).to(device)
+    model = DinoSwavFusion(
+        backbone=model,
+        num_classes=config.model.num_classes,
+        swav_arch=config.model.swav_arch,
+        swav_trainable=config.model.swav_trainable,
+        attention_threshold=config.model.attention_threshold,
+        attention_margin=config.model.attention_margin,
+        fusion_dim=config.model.fusion_dim,
+    ).to(device)
 
     return model, transforms
 

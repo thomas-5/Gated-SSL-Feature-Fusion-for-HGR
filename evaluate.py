@@ -115,19 +115,19 @@ def create_eval_dataloaders(
 ) -> Dict[str, DataLoader]:
     """Build evaluation loaders for validation and test splits."""
     eval_pair_transform = transforms.get("eval_pair")
-    eval_transform = None if eval_pair_transform is not None else transforms.get("eval")
+    if eval_pair_transform is None:
+        raise ValueError("Segmentation paired transforms must be provided for evaluation splits")
 
-    common_kwargs = {
-        "root_dir": config.dataset.root_dir,
-        "use_bounding_box": config.dataset.use_bounding_box,
-        "crop_to_bbox": config.dataset.crop_to_bbox,
-        "use_segmentation": config.dataset.use_segmentation,
-        "transform": eval_transform,
-        "paired_transform": eval_pair_transform,
-    }
-
-    val_ds = OuhandsDS(split="validation", **common_kwargs)
-    test_ds = OuhandsDS(split="test", **common_kwargs)
+    val_ds = OuhandsDS(
+        split="validation",
+        root_dir=config.dataset.root_dir,
+        paired_transform=eval_pair_transform,
+    )
+    test_ds = OuhandsDS(
+        split="test",
+        root_dir=config.dataset.root_dir,
+        paired_transform=eval_pair_transform,
+    )
 
     pin_memory = device.type == "cuda"
 

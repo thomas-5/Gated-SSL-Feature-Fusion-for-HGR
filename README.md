@@ -10,7 +10,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 ## System Highlights
 
 - DINO ViT fine-tuning with optional segmentation-guided attention KL loss and mixed precision support.
-- Optional SwAV fusion head that crops attention-derived hand regions, extracts SwAV features, and fuses them with DINO CLS tokens through a learned gate.
+- SwAV fusion head that crops attention-derived hand regions, extracts SwAV features, and fuses them with DINO CLS tokens through a learned gate.
 - Supervised ImageNet baseline leveraging `vit_base_patch16_224` with selective layer unfreezing.
 - Shared dataloading stack, deterministic seeding, and paired transforms for aligned image–mask augmentations.
 - Automated leakage diagnostics across train, validation, and test splits.
@@ -26,7 +26,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 - `train_supervised_vit.py`: supervised baseline training script using the shared loaders and GradScaler-aware optimization.
 - `check_data_leakage.py`: split verification via filename, path, and hash comparisons.
 - `tsne_dino.py` and `tsne_supervised.py`: single-checkpoint t-SNE embedding visualizers for DINO and supervised models.
-- `ouhands_loader.py`: dataset implementation supporting RGB images, bounding boxes, segmentation masks, and paired transforms.
+- `ouhands_loader.py`: dataset implementation supporting RGB images, segmentation masks, and paired transforms.
 - `config.py` and `landmark_configs.yaml`: experiment-level hyperparameters and dataset settings.
 
 ## Setup
@@ -39,7 +39,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 
 1. Place the OUHANDS dataset under `dataset/` following the directory layout expected by `ouhands_loader.py`.
 2. Optional: run `python check_data_leakage.py --root-dir dataset` to confirm split integrity before training.
-3. Segmentation masks are required only when using attention regularization; bounding boxes and RGB images are always supported.
+3. Segmentation masks are required for training and evaluation; RGB images are always paired with their masks through synchronized transforms.
 
 ## Training Pipelines
 
@@ -49,7 +49,7 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 
 - Pulls configuration from `config.py` (output paths, augmentation choices, optimizer settings).
 - Supports segmentation-weighted KL loss via `config.training.segmentation_kl_weight`.
-- Enable SwAV fusion by setting `config.model.use_swav_fusion = True`; the script will derive hand-centric crops from attention maps and fuse SwAV/DINO embeddings before classification.
+- SwAV fusion is enabled by default; the script derives hand-centric crops from attention maps and fuses SwAV/DINO embeddings before classification.
 - Saves `*_best.pt` and `*_last.pt` checkpoints under `checkpoints/`.
 
 ### Supervised ViT Baseline
@@ -86,7 +86,7 @@ Both entry points reuse `create_eval_dataloaders`, ensuring embeddings are drawn
 
 - 3,000 gesture images plus roughly 17,000 negatives distributed across OUHANDS train, validation, and test folders.
 - Ten static gesture classes (A, B, C, D, E, F, H, I, J, K) with approximately ten samples per subject per class.
-- Multimodal assets include RGB, depth, segmentation masks, bounding boxes, and orientation metadata; this project uses RGB and optional masks.
+- Multimodal assets include RGB, depth, segmentation masks, bounding boxes, and orientation metadata; this project uses RGB images together with segmentation masks.
 - Annotations follow the PASCAL VOC XML schema; images are 640×480 PNGs.
 
 Refer to `dataset/annos/` for annotation examples and `__MACOSX/` for legacy distribution artifacts.

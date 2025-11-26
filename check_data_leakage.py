@@ -35,9 +35,6 @@ def instantiate_dataset(split: str, config) -> OuhandsDS:
         target_transform=None,
         return_paths=False,
         class_subset=None,
-        use_bounding_box=config.dataset.use_bounding_box,
-        crop_to_bbox=config.dataset.crop_to_bbox,
-        use_segmentation=config.dataset.use_segmentation,
         train_subset_ratio=config.dataset.train_subset_ratio if split == "train" else 1.0,
         random_seed=config.dataset.random_seed,
     )
