@@ -1,6 +1,6 @@
 # Gated Self-Supervised Feature Fusion for Label-Efficient Hand Gesture Recognition
 
-This repository explores a label-efficient approach that combines spatially structured ViT features learned by self-supervised methods with instance-discriminative CNN features. The core idea is a two-stream fusion architecture that leverages attention from a ViT to localize the hand and guide a second stream that extracts complementary features.Our work investigates whether self-supervised learning features can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for our proposed model and visualization tooling.
+This repository explores a label-efficient approach that combines spatially structured ViT features learned by self-supervised methods with instance-discriminative CNN features. The core idea is a two-stream fusion architecture that leverages attention from a ViT to localize the hand and guide a second stream that extracts complementary features.Our work investigates whether self-supervised learning features can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for our proposed model and visualization tooling. You can find the report paper [here](report.pdf).
 
 ## System Highlights
 
