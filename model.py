@@ -14,86 +14,6 @@ from config import ExperimentConfig
 from paired_transforms import SegmentationEvalTransform, SegmentationTrainTransform
 from utils import forward_with_attention as backbone_forward_with_attention
 
-
-def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Module, Dict[str, object]]:
-    """Instantiate the timm ViT model and prepare it for fine-tuning.
-
-    Args:
-        config: Experiment configuration instance.
-        device: Torch device to place the model on.
-
-    Returns:
-        Tuple containing the prepared model and a dictionary with train/eval transforms.
-    """
-    model = timm.create_model(config.model.model_name, pretrained=True)
-    model.reset_classifier(num_classes=config.model.num_classes)
-
-    # Freeze everything first, then selectively unfreeze.
-    for param in model.parameters():
-        param.requires_grad = False
-
-    total_blocks = len(getattr(model, "blocks", []))
-    if total_blocks == 0:
-        raise ValueError("Expected the model to expose transformer blocks for partial fine-tuning.")
-
-    k = min(max(config.model.unfreeze_blocks, 0), total_blocks)
-    if k > 0:
-        for block in model.blocks[-k:]:
-            for param in block.parameters():
-                param.requires_grad = True
-
-    # Classifier head always remains trainable.
-    for param in model.get_classifier().parameters():
-        param.requires_grad = True
-
-    model = model.to(device)
-
-    data_config = resolve_model_data_config(model)
-    transforms = {
-        "train": create_transform(**data_config, is_training=True),
-        "eval": create_transform(**data_config, is_training=False),
-    }
-
-    input_size = data_config.get("input_size")
-    if not input_size:
-        raise ValueError("Model data config missing input_size for segmentation transforms")
-    size = input_size[-1]
-    mean = data_config.get("mean", (0.485, 0.456, 0.406))
-    std = data_config.get("std", (0.229, 0.224, 0.225))
-
-    transforms["train_pair"] = SegmentationTrainTransform(size=size, mean=mean, std=std)
-    transforms["eval_pair"] = SegmentationEvalTransform(size=size, mean=mean, std=std)
-
-    model = DinoSwavFusion(
-        backbone=model,
-        num_classes=config.model.num_classes,
-        swav_arch=config.model.swav_arch,
-        swav_trainable=config.model.swav_trainable,
-        attention_threshold=config.model.attention_threshold,
-        attention_margin=config.model.attention_margin,
-        fusion_dim=config.model.fusion_dim,
-    ).to(device)
-
-    return model, transforms
-
-
-def parameter_groups(model: nn.Module, weight_decay: float) -> list[dict[str, object]]:
-    """Create optimizer parameter groups that respect weight decay rules."""
-    decay, no_decay = [], []
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-        if param.ndim == 1 or name.endswith(".bias"):
-            no_decay.append(param)
-        else:
-            decay.append(param)
-
-    return [
-        {"params": decay, "weight_decay": weight_decay},
-        {"params": no_decay, "weight_decay": 0.0},
-    ]
-
-
 class DinoSwavFusion(nn.Module):
     """Fuse DINO CLS embeddings with SwAV crops derived from attention maps."""
 
@@ -274,3 +194,81 @@ class DinoSwavFusion(nn.Module):
         if self._swav_frozen:
             self.swav.eval()
         return self
+
+def build_model(config: ExperimentConfig, device: torch.device) -> tuple[nn.Module, Dict[str, object]]:
+    """Instantiate the timm ViT model and prepare it for fine-tuning.
+
+    Args:
+        config: Experiment configuration instance.
+        device: Torch device to place the model on.
+
+    Returns:
+        Tuple containing the prepared model and a dictionary with train/eval transforms.
+    """
+    model = timm.create_model(config.model.model_name, pretrained=True)
+    model.reset_classifier(num_classes=config.model.num_classes)
+
+    # Freeze everything first, then selectively unfreeze.
+    for param in model.parameters():
+        param.requires_grad = False
+
+    total_blocks = len(getattr(model, "blocks", []))
+    if total_blocks == 0:
+        raise ValueError("Expected the model to expose transformer blocks for partial fine-tuning.")
+
+    k = min(max(config.model.unfreeze_blocks, 0), total_blocks)
+    if k > 0:
+        for block in model.blocks[-k:]:
+            for param in block.parameters():
+                param.requires_grad = True
+
+    # Classifier head always remains trainable.
+    for param in model.get_classifier().parameters():
+        param.requires_grad = True
+
+    model = model.to(device)
+
+    data_config = resolve_model_data_config(model)
+    transforms = {
+        "train": create_transform(**data_config, is_training=True),
+        "eval": create_transform(**data_config, is_training=False),
+    }
+
+    input_size = data_config.get("input_size")
+    if not input_size:
+        raise ValueError("Model data config missing input_size for segmentation transforms")
+    size = input_size[-1]
+    mean = data_config.get("mean", (0.485, 0.456, 0.406))
+    std = data_config.get("std", (0.229, 0.224, 0.225))
+
+    transforms["train_pair"] = SegmentationTrainTransform(size=size, mean=mean, std=std)
+    transforms["eval_pair"] = SegmentationEvalTransform(size=size, mean=mean, std=std)
+
+    model = DinoSwavFusion(
+        backbone=model,
+        num_classes=config.model.num_classes,
+        swav_arch=config.model.swav_arch,
+        swav_trainable=config.model.swav_trainable,
+        attention_threshold=config.model.attention_threshold,
+        attention_margin=config.model.attention_margin,
+        fusion_dim=config.model.fusion_dim,
+    ).to(device)
+
+    return model, transforms
+
+
+def parameter_groups(model: nn.Module, weight_decay: float) -> list[dict[str, object]]:
+    """Create optimizer parameter groups that respect weight decay rules."""
+    decay, no_decay = [], []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if param.ndim == 1 or name.endswith(".bias"):
+            no_decay.append(param)
+        else:
+            decay.append(param)
+
+    return [
+        {"params": decay, "weight_decay": weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]

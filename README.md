@@ -1,11 +1,6 @@
-# Beyond Landmarks: Self-Supervised Pretraining for Label-Efficient Hand Gesture Recognition
+# Gated Self-Supervised Feature Fusion for Label-Efficient Hand Gesture Recognition
 
-Beyond Landmarks investigates whether self-supervised Vision Transformers can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for DINO fine-tuning, a supervised ViT baseline, diagnostics, and visualization tooling.
-
-## Project Resources
-
-- Research proposal: https://docs.google.com/document/d/11c9O-pnMULQ-t4CMpvxcZgKIL8rN2pk7wXHxR2nweKk/edit?tab=t.0
-- Project space: https://www.notion.so/CSC2503-Project-2a1f7375ce7e80029f22df1c2033ee28?source=copy_link
+This repository explores a label-efficient approach that combines spatially structured ViT features learned by self-supervised methods with instance-discriminative CNN features. The core idea is a two-stream fusion architecture that leverages attention from a ViT to localize the hand and guide a second stream that extracts complementary features.Our work investigates whether self-supervised learning features can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for our proposed model and visualization tooling.
 
 ## System Highlights
 
@@ -29,71 +24,59 @@ Beyond Landmarks investigates whether self-supervised Vision Transformers can pr
 - `ouhands_loader.py`: dataset implementation supporting RGB images, segmentation masks, and paired transforms.
 - `config.py` and `landmark_configs.yaml`: experiment-level hyperparameters and dataset settings.
 
-## Setup
+## Methodology 
 
-1. Create a Python 3.10+ environment.
-2. Install dependencies with `pip install -r requirements.txt`.
-3. Verify CUDA drivers are available for GPU execution; AMP activates automatically on CUDA devices.
+- Two-stream architecture:
 
-## Data Preparation
+  - Stream A (DINO / ViT): extracts spatial ViT features and produces a global CLS embedding. The ViT attention maps are used to localize hand regions.
+  - Stream B (SwAV / ResNet): processes an attention-guided crop of the input image to produce instance-discriminative features focused on the hand region.
+- Attention-Guided Cropping:
 
-1. Place the OUHANDS dataset under `dataset/` following the directory layout expected by `ouhands_loader.py`.
-2. Optional: run `python check_data_leakage.py --root-dir dataset` to confirm split integrity before training.
-3. Segmentation masks are required for training and evaluation; RGB images are always paired with their masks through synchronized transforms.
+  - Compute a hand heatmap from the ViT's last-block CLS→patch attention.
+  - Derive a minimum bounding rectangle around high-attention patches, optionally expand by a small margin, and crop the input image.
+  - Feed the crop to the SwAV encoder to obtain a complementary feature vector.
+- Gated Feature Fusion:
 
-## Training Pipelines
+  - Project each stream's features to a common embedding dimension.
+  - Compute a learned gate from the concatenated stream features and apply a sigmoid to obtain per-dimension weights.
+  - Fuse projected stream features with the gate as a convex combination and pass the fused vector to a classifier head.
+- Segmentation-Guided Attention Regularization:
 
-### DINO Fine-Tuning
+  - When segmentation masks are available during training, apply a KL loss that encourages the ViT attention distribution to align with the ground-truth hand mask.
+  - Final training objective: L_final = L_CE + lambda * L_SG, where L_CE is cross-entropy on class labels and L_SG is the attention KL term.
 
-`python train.py`
+The network is trained end-to-end for classification while the gated fusion and segmentation guidance improve localization and robustness with relatively few labeled examples.
 
-- Pulls configuration from `config.py` (output paths, augmentation choices, optimizer settings).
-- Supports segmentation-weighted KL loss via `config.training.segmentation_kl_weight`.
-- SwAV fusion is enabled by default; the script derives hand-centric crops from attention maps and fuses SwAV/DINO embeddings before classification.
-- Saves `*_best.pt` and `*_last.pt` checkpoints under `checkpoints/`.
+## Dataset overview
 
-### Supervised ViT Baseline
+- Dataset: OUHANDS (static hand gesture classes). The repository expects a local `landmarks/` folder with pre-extracted landmark JSONs and an image dataset compatible with `ouhands_loader.py` for image-based training.
+- Standard train / validation / test splits are used; see the dataset folders for exact counts.
 
-`python train_supervised_vit.py`
+## How to use
 
-- Loads an ImageNet-pretrained `vit_base_patch16_224`, freezes early blocks, and fine-tunes the last `k` transformer blocks plus the classification head.
-- Shares dataloaders and evaluation routines with the DINO pipeline.
-- Outputs `vit_supervised_best.pt` in `checkpoints/`.
+- Train a ViT model (DINO fine-tuning or supervised):
 
-## Evaluation
+  ```bash
+  python train.py
+  ```
+- Evaluate a checkpoint:
 
-`python evaluate.py --checkpoint-path checkpoints/<file>.pt`
+  ```bash
+  python evaluate.py --checkpoint-path checkpoints/<checkpoint>.pt
+  ```
+- Run landmark-based Random Forest experiments:
 
-- Reports validation loss/accuracy and test accuracy, precision, recall, and macro F1.
-- Generates attention-versus-segmentation grids under `outputs/` when segmentation masks are available.
-- Uses `utils.forward_with_attention` to recover attention maps for qualitative inspection.
+  ```bash
+  python landmarks_train_rf.py
+  ```
+- Run the MLP landmark baseline:
 
-## Visualization Tools
+  ```bash
+  python landmarks_train.py
+  ```
 
-- Attention maps: `evaluate.save_attention_grid` samples one image per class (deterministic seed), overlays attention heatmaps, and optionally renders segmentation masks in a 3×8 grid.
+For additional configuration (hyperparameters, segmentation loss weight, grid-search options), see `config.py` and the top of each script.
+
+If you want sections re-added or a slightly different layout for the final report, tell me which headings to include.
+
 - t-SNE embeddings: run `python tsne_dino.py checkpoints/<dino_checkpoint>.pt --output outputs/tsne_dino.png` for DINO checkpoints or `python tsne_supervised.py checkpoints/<supervised_checkpoint>.pt --arch vit_base_patch16_224 --output outputs/tsne_supervised.png` for supervised checkpoints.
-
-Both entry points reuse `create_eval_dataloaders`, ensuring embeddings are drawn from identical preprocessing pipelines.
-
-## Diagnostics
-
-`python check_data_leakage.py --root-dir dataset`
-
-- Flags any shared samples across splits by comparing canonicalized paths and SHA256 hashes.
-- Prints actionable reports highlighting duplicates, if any.
-
-## OUHANDS Dataset Summary
-
-- 3,000 gesture images plus roughly 17,000 negatives distributed across OUHANDS train, validation, and test folders.
-- Ten static gesture classes (A, B, C, D, E, F, H, I, J, K) with approximately ten samples per subject per class.
-- Multimodal assets include RGB, depth, segmentation masks, bounding boxes, and orientation metadata; this project uses RGB images together with segmentation masks.
-- Annotations follow the PASCAL VOC XML schema; images are 640×480 PNGs.
-
-Refer to `dataset/annos/` for annotation examples and `__MACOSX/` for legacy distribution artifacts.
-
-## References
-
-- Matilainen, M. et al. "OUHANDS database for hand detection and pose recognition", IPTA 2016.
-- Caron, M. et al. "Emerging Properties in Self-Supervised Vision Transformers", 2021.
-- Dosovitskiy, A. et al. "An Image is Worth 16x16 Words", 2020.
-
