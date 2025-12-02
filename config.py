@@ -26,7 +26,7 @@ class ModelConfig:
 
     model_name: str = "vit_small_patch16_dinov3"
     num_classes: int = 10
-    unfreeze_blocks: int = 3  # Number of final transformer blocks to fine-tune
+    unfreeze_blocks: int = 4  # Number of final transformer blocks to fine-tune
     swav_arch: str = "swav_resnet50"
     swav_trainable: bool = True
     attention_threshold: float = 0.6
@@ -38,7 +38,7 @@ class ModelConfig:
 class TrainingConfig:
     """Optimizer and training loop settings."""
 
-    epochs: int = 30
+    epochs: int = 20
     learning_rate: float = 5e-4
     weight_decay: float = 0.05
     betas: tuple[float, float] = (0.9, 0.999)

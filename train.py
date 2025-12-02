@@ -297,7 +297,8 @@ def main(config: ExperimentConfig | None = None) -> None:
     else:
         print("Warning: No improvement observed during training: skipping checkpoint save.")
 
-    # Use last model for test evaluation TODO: change to best model if desired
+    # Use best model for evaluation
+    model.load_state_dict(best_state)
     metrics = classification_metrics(model, test_loader, device, use_amp)
     print(
         "Test metrics | "

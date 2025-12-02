@@ -15,6 +15,7 @@ This repository explores a label-efficient approach that combines spatially stru
 
 - `train.py`: model training loop with cosine schedule, AMP, segmentation-aware regularization, and checkpoint management.
 - `evaluate.py`: validation/test runner that reports accuracy, precision, recall, F1, and saves attention versus segmentation grids.
+- `checkpoints/`: store model checkpoints,
 - `model.py`: proposed model construction, partial unfreezing, and transform provisioning (including paired segmentation transforms).
 - `utils.py`: device/seed helpers, forward-with-attention wrapper, deterministic sampling utilities.
 - `paired_transforms.py`: torchvision-style transforms that keep image/mask pairs spatially aligned.
@@ -63,8 +64,15 @@ The network is trained end-to-end for classification while the gated fusion and 
   python evaluate.py --checkpoint-path checkpoints/<checkpoint>.pt
   ```
 
+You can download the best checkpoint [here](https://drive.google.com/file/d/1vN2fS9ulhDepRnbtbp1yh9wtsAUsOJj1/view?usp=sharing), and save it to `checkpoints/vit_small_patch16_dinov3_k4_best.pt`
+
+```txt
+accuracy=0.9510 
+precision=0.9544 
+recall=0.9510 
+f1=0.9515
+```
+
+By default: `python evaluate.py` will evaluate the this model, and `python train.py` will overwrite this model.
+
 For additional configuration (hyperparameters, segmentation loss weight, grid-search options), see `config.py` and the top of each script.
-
-If you want sections re-added or a slightly different layout for the final report, tell me which headings to include.
-
-- t-SNE embeddings: run `python tsne_dino.py checkpoints/<dino_checkpoint>.pt --output outputs/tsne_dino.png` for DINO checkpoints or `python tsne_supervised.py checkpoints/<supervised_checkpoint>.pt --arch vit_base_patch16_224 --output outputs/tsne_supervised.png` for supervised checkpoints.

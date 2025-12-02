@@ -157,8 +157,8 @@ def run_evaluation(config: ExperimentConfig | None = None, checkpoint_path: Path
 
     model, transforms = build_model(config, device)
 
-    # Use last model
-    checkpoint = checkpoint_path or config.checkpoint_path(mode='last')
+    # Use best model
+    checkpoint = checkpoint_path or config.checkpoint_path(mode='best')
     if not checkpoint.exists():
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint}")
 
