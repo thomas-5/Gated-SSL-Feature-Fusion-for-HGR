@@ -13,18 +13,15 @@ This repository explores a label-efficient approach that combines spatially stru
 
 ## Codebase Overview
 
-- `train.py`: DINO fine-tuning loop with cosine schedule, AMP, segmentation-aware regularization, and checkpoint management.
+- `train.py`: model training loop with cosine schedule, AMP, segmentation-aware regularization, and checkpoint management.
 - `evaluate.py`: validation/test runner that reports accuracy, precision, recall, F1, and saves attention versus segmentation grids.
-- `model.py`: timm ViT construction, partial unfreezing, and transform provisioning (including paired segmentation transforms).
+- `model.py`: proposed model construction, partial unfreezing, and transform provisioning (including paired segmentation transforms).
 - `utils.py`: device/seed helpers, forward-with-attention wrapper, deterministic sampling utilities.
 - `paired_transforms.py`: torchvision-style transforms that keep image/mask pairs spatially aligned.
-- `train_supervised_vit.py`: supervised baseline training script using the shared loaders and GradScaler-aware optimization.
-- `check_data_leakage.py`: split verification via filename, path, and hash comparisons.
-- `tsne_dino.py` and `tsne_supervised.py`: single-checkpoint t-SNE embedding visualizers for DINO and supervised models.
 - `ouhands_loader.py`: dataset implementation supporting RGB images, segmentation masks, and paired transforms.
-- `config.py` and `landmark_configs.yaml`: experiment-level hyperparameters and dataset settings.
+- `config.py` : experiment-level hyperparameters and dataset settings.
 
-## Methodology 
+## Methodology
 
 - Two-stream architecture:
 
@@ -49,12 +46,13 @@ The network is trained end-to-end for classification while the gated fusion and 
 
 ## Dataset overview
 
-- Dataset: OUHANDS (static hand gesture classes). The repository expects a local `landmarks/` folder with pre-extracted landmark JSONs and an image dataset compatible with `ouhands_loader.py` for image-based training.
+- Download dataset: [OUHANDS](https://www.kaggle.com/datasets/mumuheu/ouhands) (static hand gesture classes).
+- Put the downloaded dataset under the `dataset/` folder.
 - Standard train / validation / test splits are used; see the dataset folders for exact counts.
 
 ## How to use
 
-- Train a ViT model (DINO fine-tuning or supervised):
+- Train the GSSL feature fusion model:
 
   ```bash
   python train.py
@@ -63,16 +61,6 @@ The network is trained end-to-end for classification while the gated fusion and 
 
   ```bash
   python evaluate.py --checkpoint-path checkpoints/<checkpoint>.pt
-  ```
-- Run landmark-based Random Forest experiments:
-
-  ```bash
-  python landmarks_train_rf.py
-  ```
-- Run the MLP landmark baseline:
-
-  ```bash
-  python landmarks_train.py
   ```
 
 For additional configuration (hyperparameters, segmentation loss weight, grid-search options), see `config.py` and the top of each script.
