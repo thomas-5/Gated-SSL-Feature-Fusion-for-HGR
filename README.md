@@ -1,6 +1,6 @@
 # Gated Self-Supervised Feature Fusion for Label-Efficient Hand Gesture Recognition
 
-This repository explores a label-efficient approach that combines spatially structured ViT features learned by self-supervised methods with instance-discriminative CNN features. The core idea is a two-stream fusion architecture that leverages attention from a ViT to localize the hand and guide a second stream that extracts complementary features.Our work investigates whether self-supervised learning features can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for our proposed model and visualization tooling. You can find the report paper [here](report.pdf).
+This repository explores a label-efficient approach that combines spatially structured ViT features learned by self-supervised methods with instance-discriminative CNN features. The core idea is a two-stream fusion architecture that leverages attention from a ViT to localize the hand and guide a second stream that extracts complementary features.Our work investigates whether self-supervised learning features can provide label-efficient hand gesture recognition on OUHANDS. The repository ships production-ready pipelines for our proposed model and visualization tooling. Our report paper can be found [here](report.pdf).
 
 ## System Highlights
 
@@ -64,15 +64,15 @@ The network is trained end-to-end for classification while the gated fusion and 
   python evaluate.py --checkpoint-path checkpoints/<checkpoint>.pt
   ```
 
-You can download the best checkpoint [here](https://drive.google.com/file/d/1vN2fS9ulhDepRnbtbp1yh9wtsAUsOJj1/view?usp=sharing), and save it to `checkpoints/vit_small_patch16_dinov3_k4_best.pt`
+The current best checkpoint can be downloaded [here](https://drive.google.com/file/d/1vN2fS9ulhDepRnbtbp1yh9wtsAUsOJj1/view?usp=sharing)
 
 ```txt
-accuracy=0.9510 
-precision=0.9544 
-recall=0.9510 
-f1=0.9515
+Accuracy=0.9510 
+Precision=0.9544 
+Recall=0.9510 
+F1=0.9515
 ```
 
-By default: `python evaluate.py` will evaluate the this model, and `python train.py` will overwrite this model.
+By default: `python evaluate.py` will evaluate this model `checkpoints/vit_small_patch16_dinov3_k4_best.pt` folder, and `python train.py` will overwrite this model.
 
 For additional configuration (hyperparameters, segmentation loss weight, grid-search options), see `config.py` and the top of each script.
